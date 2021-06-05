@@ -1,4 +1,4 @@
-use some_math::polynomial::Polynomial;
+use some_math::polynomials::Polynomial;
 
 fn main() {
     let p1 = Polynomial::new(vec![3.0, 4.6, 5.0]);
