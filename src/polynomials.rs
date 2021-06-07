@@ -3,20 +3,25 @@ use std::{
     ops::{Add, Mul, Neg, Sub},
 };
 
+use num_traits::{one, zero, Num, Signed};
+
 #[derive(PartialEq, Debug, Clone)]
-pub struct Polynomial {
-    coefs: Vec<f64>,
+pub struct Polynomial<T> {
+    coefs: Vec<T>,
 }
 
-impl Polynomial {
-    pub fn new<T>(coefs: T) -> Self
+impl<T> Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+{
+    pub fn new<I>(coefs: I) -> Self
     where
-        T: IntoIterator<Item = f64>,
+        I: IntoIterator<Item = T>,
     {
-        let coefs: Vec<f64> = coefs
+        let coefs: Vec<T> = coefs
             .into_iter()
-            .map(|coef| coef)
-            .skip_while(|&coef| coef == 0f64)
+            .skip_while(|&coef| coef.is_zero())
             .collect();
 
         Self { coefs }
@@ -27,15 +32,15 @@ impl Polynomial {
     }
 
     pub fn unit() -> Self {
-        Self::new(vec![1.0])
+        Self::new(vec![one()])
     }
 
     pub fn degree(&self) -> isize {
         (self.coefs.len() as isize) - 1
     }
 
-    pub fn evaluate(&self, x: f64) -> f64 {
-        let initial = self.coefs.first().map(|&coef| coef).unwrap_or_default();
+    pub fn evaluate(&self, x: T) -> T {
+        let initial = self.coefs.first().map(|&coef| coef).unwrap_or(zero());
         self.coefs
             .iter()
             .skip(1)
@@ -43,7 +48,13 @@ impl Polynomial {
     }
 }
 
-impl Display for Polynomial {
+impl<T> Display for Polynomial<T>
+where
+    T: Signed,
+    T: Copy,
+    T: Display,
+    T: PartialOrd,
+{
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "f(x) = ")?;
         let degree = self.degree();
@@ -52,8 +63,11 @@ impl Display for Polynomial {
             return write!(formatter, "0");
         }
 
-        fn format_part(coef: f64, degree: isize) -> String {
-            let prefix = if coef == 1.0 {
+        fn format_part<T>(coef: T, degree: isize) -> String
+        where
+            T: Display + Signed,
+        {
+            let prefix = if coef == one() {
                 "".to_string()
             } else {
                 format!("{}", coef.abs())
@@ -73,13 +87,14 @@ impl Display for Polynomial {
             "{}",
             format_part(*self.coefs.first().unwrap(), degree)
         );
+
         self.coefs
             .iter()
             .enumerate()
             .skip(1)
-            .filter(|(_, &coef)| coef != 0.0)
+            .filter(|(_, &coef)| coef != zero())
             .fold(start, |result, (offset, &coef)| {
-                let op = if coef >= 0.0 { "+" } else { "-" };
+                let op = if coef >= zero() { "+" } else { "-" };
 
                 result.and(write!(
                     formatter,
@@ -91,15 +106,19 @@ impl Display for Polynomial {
     }
 }
 
-impl Add for Polynomial {
-    type Output = Polynomial;
+impl<T> Add for Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+{
+    type Output = Polynomial<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
         if self.degree() < rhs.degree() {
             return rhs + self;
         }
 
-        let rhs_coefs = std::iter::repeat(0f64)
+        let rhs_coefs = std::iter::repeat(zero())
             .take((self.degree() - rhs.degree()) as usize)
             .chain(rhs.coefs);
 
@@ -113,8 +132,14 @@ impl Add for Polynomial {
     }
 }
 
-impl Neg for Polynomial {
-    type Output = Polynomial;
+impl<T> Neg for Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+    T: Neg,
+    T: Neg<Output = T>,
+{
+    type Output = Polynomial<T>;
 
     fn neg(self) -> Self::Output {
         let coefs = self.coefs.into_iter().map(|coef| -coef);
@@ -123,29 +148,39 @@ impl Neg for Polynomial {
     }
 }
 
-impl Sub for Polynomial {
-    type Output = Polynomial;
+impl<T> Sub for Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+    T: Neg,
+    T: Neg<Output = T>,
+{
+    type Output = Polynomial<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         -rhs + self
     }
 }
 
-impl Mul for Polynomial {
-    type Output = Polynomial;
+impl<T> Mul for Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+{
+    type Output = Polynomial<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         if self.degree() == -1 || rhs.degree() == -1 {
             return Polynomial::zero();
         }
 
-        let mut coefs = vec![0.0; (self.degree() + rhs.degree() + 1) as usize];
+        let mut coefs = vec![zero(); (self.degree() + rhs.degree() + 1) as usize];
 
         for (offset1, &coef1) in self.coefs.iter().enumerate() {
             for (offset2, &coef2) in rhs.coefs.iter().enumerate() {
                 let degree = self.degree() - (offset1 as isize) + rhs.degree() - (offset2 as isize);
 
-                coefs[degree as usize] += coef1 * coef2;
+                coefs[degree as usize] = coefs[degree as usize] + coef1 * coef2;
             }
         }
 
@@ -155,7 +190,11 @@ impl Mul for Polynomial {
     }
 }
 
-impl Default for Polynomial {
+impl<T> Default for Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+{
     fn default() -> Self {
         Polynomial::unit()
     }
@@ -199,7 +238,7 @@ mod tests {
             Polynomial::new(vec![1.0, 0.0, -3.0, 1.5]).to_string(),
             "f(x) = x^3 - 3x + 1.5"
         );
-        assert_eq!(Polynomial::zero().to_string(), "f(x) = 0");
+        assert_eq!(Polynomial::<f64>::zero().to_string(), "f(x) = 0");
     }
 
     #[test]
@@ -211,8 +250,10 @@ mod tests {
         assert_eq!(Polynomial::zero().evaluate(3.0), 0.0);
     }
 
-    fn arbitrary_polynomial(degree_range: RangeInclusive<usize>) -> BoxedStrategy<Polynomial> {
-        vec(&(-10000f64..10000f64), degree_range)
+    fn arbitrary_polynomial(
+        degree_range: RangeInclusive<usize>,
+    ) -> BoxedStrategy<Polynomial<i128>> {
+        vec(&(-10000i128..10000i128), degree_range)
             .prop_map(Polynomial::new)
             .boxed()
     }
@@ -255,6 +296,33 @@ mod tests {
 
     proptest! {
         #[test]
+        fn addition_associative(
+            p1 in arbitrary_polynomial(0..=10),
+            p2 in arbitrary_polynomial(0..=10),
+            x in 0i128..10i128
+        ) {
+            let expected = p1.evaluate(x) + p2.evaluate(x);
+
+            assert_eq!((p1 + p2).evaluate(x), expected)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn addition_commutative(
+            p1 in arbitrary_polynomial(0..=10),
+            p2 in arbitrary_polynomial(0..=10),
+            x in 0i128..10i128
+        ) {
+            let m1 = p1.clone() + p2.clone();
+            let m2 = p1 + p2;
+
+            assert_eq!(m1.evaluate(x), m2.evaluate(x))
+        }
+    }
+
+    proptest! {
+        #[test]
         fn multiply_non_zero_polynomials_has_degree_of_sum_of_input_degrees(
             p1 in arbitrary_polynomial(1..=100),
             p2 in arbitrary_polynomial(1..=100)
@@ -279,6 +347,33 @@ mod tests {
         #[test]
         fn multiply_with_zero_yields_zero_polynomial(p1 in arbitrary_polynomial(0..=100)) {
             assert_eq!(p1 * Polynomial::zero(), Polynomial::zero());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn multiplication_associative(
+            p1 in arbitrary_polynomial(0..=10),
+            p2 in arbitrary_polynomial(0..=10),
+            x in 0i128..10i128
+        ) {
+            let expected = p1.evaluate(x) * p2.evaluate(x);
+
+            assert_eq!((p1 * p2).evaluate(x), expected)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn multiplication_commutative(
+            p1 in arbitrary_polynomial(0..=10),
+            p2 in arbitrary_polynomial(0..=10),
+            x in 0i128..10i128
+        ) {
+            let m1 = p1.clone() * p2.clone();
+            let m2 = p1 * p2;
+
+            assert_eq!(m1.evaluate(x), m2.evaluate(x))
         }
     }
 }

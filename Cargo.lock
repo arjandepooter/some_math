@@ -204,6 +204,7 @@ dependencies = [
 name = "some_math"
 version = "0.1.0"
 dependencies = [
+ "num-traits",
  "proptest",
 ]
 

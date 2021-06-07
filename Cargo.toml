@@ -4,6 +4,12 @@ version = "0.1.0"
 authors = ["Arjan de Pooter <mail@arjandepooter.nl>"]
 edition = "2018"
 
+[lib]
+name = "some_math"
+path = "src/lib.rs"
+
+[dependencies]
+num-traits = "0.2.14"
 
 [dev-dependencies]
 proptest = "1.0.0"
