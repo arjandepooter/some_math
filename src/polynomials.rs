@@ -3,7 +3,7 @@ use std::{
     ops::{Add, Mul, Neg, Sub},
 };
 
-use num_traits::{one, zero, Num, Signed};
+use num_traits::{one, zero, Float, Num, Signed};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Polynomial<T> {
@@ -33,6 +33,29 @@ where
 
     pub fn unit() -> Self {
         Self::new(vec![one()])
+    }
+
+    pub fn interpolate<I>(points: I) -> Result<Self, &'static str>
+    where
+        I: IntoIterator<Item = (T, T)>,
+        T: Float,
+    {
+        let points: Vec<(T, T)> = points.into_iter().collect();
+
+        if points.is_empty() {
+            return Err("Needs at least 1 point");
+        }
+
+        let result = points.iter().fold(Polynomial::zero(), |sum, &(x, y)| {
+            sum + points.iter().filter(|(cx, _)| *cx != x).fold(
+                Polynomial::unit(),
+                |product, &(cx, _)| {
+                    product * Self::new(vec![one::<T>() / (x - cx), -cx / (x - cx)])
+                },
+            ) * y.into()
+        });
+
+        Ok(result)
     }
 
     pub fn degree(&self) -> isize {
@@ -200,6 +223,16 @@ where
     }
 }
 
+impl<T> From<T> for Polynomial<T>
+where
+    T: Num,
+    T: Copy,
+{
+    fn from(n: T) -> Self {
+        Self::new(vec![n])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cmp::max, ops::RangeInclusive, vec};
@@ -250,9 +283,22 @@ mod tests {
         assert_eq!(Polynomial::zero().evaluate(3.0), 0.0);
     }
 
-    fn arbitrary_polynomial(
-        degree_range: RangeInclusive<usize>,
-    ) -> BoxedStrategy<Polynomial<i128>> {
+    #[test]
+    fn interpolate() {
+        let points: Vec<(f64, f64)> = vec![(4.0, 4.0), (6.0, 3.0), (8.0, 6.0)];
+        assert_eq!(
+            Polynomial::interpolate(points),
+            Ok(Polynomial::new(vec![0.5, -5.5, 18.0]))
+        );
+
+        let points: Vec<(f64, f64)> = Vec::new();
+        assert_eq!(
+            Polynomial::interpolate(points),
+            Err("Needs at least 1 point".into())
+        );
+    }
+
+    fn integer_polynomial(degree_range: RangeInclusive<usize>) -> BoxedStrategy<Polynomial<i128>> {
         vec(&(-10000i128..10000i128), degree_range)
             .prop_map(Polynomial::new)
             .boxed()
@@ -260,13 +306,13 @@ mod tests {
 
     proptest! {
         #[test]
-        fn arbitrary_polynomials(_polynomial in arbitrary_polynomial(0..=10000)) {
+        fn arbitrary_polynomials(_polynomial in integer_polynomial(0..=10000)) {
         }
     }
 
     proptest! {
         #[test]
-        fn add_zero_identity(p1 in arbitrary_polynomial(0..=1000)) {
+        fn add_zero_identity(p1 in integer_polynomial(0..=1000)) {
             let p2 = p1.clone() + Polynomial::zero();
 
             assert_eq!(p1, p2);
@@ -275,7 +321,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn add_negate_yields_zero(p1 in arbitrary_polynomial(0..=1000)) {
+        fn add_negate_yields_zero(p1 in integer_polynomial(0..=1000)) {
             let p2 = -p1.clone();
 
             assert_eq!(p1 + p2, Polynomial::zero());
@@ -285,8 +331,8 @@ mod tests {
     proptest! {
         #[test]
         fn add_result_has_same_degree_as_highest_of_inputs(
-            p1 in arbitrary_polynomial(0..=100),
-            p2 in arbitrary_polynomial(0..=100)
+            p1 in integer_polynomial(0..=100),
+            p2 in integer_polynomial(0..=100)
         ) {
             let expected_degree = max(p1.degree(), p2.degree());
 
@@ -297,8 +343,8 @@ mod tests {
     proptest! {
         #[test]
         fn addition_associative(
-            p1 in arbitrary_polynomial(0..=10),
-            p2 in arbitrary_polynomial(0..=10),
+            p1 in integer_polynomial(0..=10),
+            p2 in integer_polynomial(0..=10),
             x in 0i128..10i128
         ) {
             let expected = p1.evaluate(x) + p2.evaluate(x);
@@ -310,8 +356,8 @@ mod tests {
     proptest! {
         #[test]
         fn addition_commutative(
-            p1 in arbitrary_polynomial(0..=10),
-            p2 in arbitrary_polynomial(0..=10),
+            p1 in integer_polynomial(0..=10),
+            p2 in integer_polynomial(0..=10),
             x in 0i128..10i128
         ) {
             let m1 = p1.clone() + p2.clone();
@@ -324,8 +370,8 @@ mod tests {
     proptest! {
         #[test]
         fn multiply_non_zero_polynomials_has_degree_of_sum_of_input_degrees(
-            p1 in arbitrary_polynomial(1..=100),
-            p2 in arbitrary_polynomial(1..=100)
+            p1 in integer_polynomial(1..=100),
+            p2 in integer_polynomial(1..=100)
         ) {
             let expected_degree = p1.degree() + p2.degree();
 
@@ -336,7 +382,7 @@ mod tests {
     proptest! {
         #[test]
         fn multiply_unit_identity(
-            p in arbitrary_polynomial(1..=100)
+            p in integer_polynomial(1..=100)
         ) {
             let mp = p.clone() * Polynomial::unit();
             assert_eq!(mp, p);
@@ -345,7 +391,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn multiply_with_zero_yields_zero_polynomial(p1 in arbitrary_polynomial(0..=100)) {
+        fn multiply_with_zero_yields_zero_polynomial(p1 in integer_polynomial(0..=100)) {
             assert_eq!(p1 * Polynomial::zero(), Polynomial::zero());
         }
     }
@@ -353,8 +399,8 @@ mod tests {
     proptest! {
         #[test]
         fn multiplication_associative(
-            p1 in arbitrary_polynomial(0..=10),
-            p2 in arbitrary_polynomial(0..=10),
+            p1 in integer_polynomial(0..=10),
+            p2 in integer_polynomial(0..=10),
             x in 0i128..10i128
         ) {
             let expected = p1.evaluate(x) * p2.evaluate(x);
@@ -366,8 +412,8 @@ mod tests {
     proptest! {
         #[test]
         fn multiplication_commutative(
-            p1 in arbitrary_polynomial(0..=10),
-            p2 in arbitrary_polynomial(0..=10),
+            p1 in integer_polynomial(0..=10),
+            p2 in integer_polynomial(0..=10),
             x in 0i128..10i128
         ) {
             let m1 = p1.clone() * p2.clone();
