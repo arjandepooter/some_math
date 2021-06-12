@@ -90,7 +90,7 @@ where
         where
             T: Display + Signed,
         {
-            let prefix = if coef == one() {
+            let prefix = if coef == one() && degree > 0 {
                 "".to_string()
             } else {
                 format!("{}", coef.abs())
@@ -271,6 +271,8 @@ mod tests {
             Polynomial::new(vec![1.0, 0.0, -3.0, 1.5]).to_string(),
             "f(x) = x^3 - 3x + 1.5"
         );
+        assert_eq!(Polynomial::<f64>::from(3f64).to_string(), "f(x) = 3");
+        assert_eq!(Polynomial::<f64>::unit().to_string(), "f(x) = 1");
         assert_eq!(Polynomial::<f64>::zero().to_string(), "f(x) = 0");
     }
 
